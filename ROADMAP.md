@@ -112,7 +112,7 @@ class Block:
 ### Phase 0 · 1주차 — 걷는 뼈대 (환경 + auth)
 > DoD: **git push 하면 30초 뒤 실제 URL에 반영된다**
 
-- [ ] **세션 1 — 연장**: Python 3.12, Docker Desktop, Git, VS Code 설치. 버전 명령 3개 확인
+- [x] **세션 1 — 연장**: Python 3.13, Docker Desktop, Git, VS Code 설치. 버전 명령 3개 확인
 - [ ] **세션 2 — 리포**: GitHub 리포 생성 → clone → **`.gitignore` 최우선 작성**(.env, __pycache__/, venv/) → 뼈대 12파일 작성(requirements, .env, config, core/db, core/security, auth 4파일, main, Dockerfile, compose) → login을 OAuth2PasswordRequestForm(폼) 버전으로 → 첫 커밋·푸시. 확인: GitHub에서 .env만 안 보임
 - [ ] **세션 3 — 첫 가동**: `docker compose up --build` → `localhost:8000/docs` → Swagger 풀코스: 가입(201) → 중복(409) → Authorize 로그인 → /me(200) → 로그아웃 후 /me(401)
 - [ ] **세션 4 — 하이브리드 전환**: postgres에 `ports: ["5432:5432"]`, .env는 `@localhost`, compose api에는 `environment:`로 `@postgres` 직접 지정. venv 생성·설치 → `docker compose up postgres redis` + `uvicorn --reload`. 저장 즉시 반영 체험
