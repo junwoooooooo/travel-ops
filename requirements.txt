@@ -1,0 +1,12 @@
+# 버전은 == 고정 (CLAUDE.md 절대 규칙)
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+python-multipart==0.0.32
+pydantic-settings==2.15.0
+email-validator==2.3.0
+
+sqlalchemy==2.0.52
+asyncpg==0.31.0
+
+pyjwt==2.13.0
+pwdlib[argon2]==0.3.1
