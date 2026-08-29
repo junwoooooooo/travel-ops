@@ -7,6 +7,9 @@
 - 세션 완료 조건: DoD 확인 + pytest 통과 + 커밋. 완료 시 ROADMAP.md 체크박스 갱신
 - 새 아이디어는 구현하지 말고 ROADMAP.md 6장 백로그에 추가 제안만
 - 큰 세션은 코드 작성 전에 계획을 먼저 보여주고 승인받기
+- 세션 작업은 `feat/session-N-이름` 브랜치에서 진행. 세션 완료 시 push + `gh pr create --fill`까지 자동 수행
+- 머지는 사용자가 "머지해"라고 지시했을 때만 `gh pr merge --squash --delete-branch`로 수행
+- main 직접 push 금지, force push 금지
 
 ## 명령어
 - 개발: docker compose up postgres redis + uvicorn app.main:app --reload
