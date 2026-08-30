@@ -51,3 +51,35 @@ DB 위치는 이 파일이 아니라 서버 `.env`의 `DATABASE_URL`이 정한�
 # RDS를 지운 뒤          → DATABASE_URL=...@postgres:5432/travelops 로 바꾸고
 docker compose -f docker-compose.prod.yml --profile localdb up -d
 ```
+
+## 자동 배포 (CD)
+
+main에 push하면 `.github/workflows/ci.yml`의 `deploy` job이 돈다. `test`가 통과해야만 시작하고,
+PR에서는 돌지 않는다.
+
+1. secret의 배포 키로 EC2에 ssh
+2. 서버에서 `git reset --hard <그 커밋의 SHA>` — `pull`이 아니라 SHA 고정이다 (ADR-0006)
+3. `docker compose -f docker-compose.prod.yml up -d --build` + dangling 이미지 정리
+4. 러너가 **바깥에서** `http://<EC2_HOST>/health`를 3초 간격 20회 폴링. 200이 안 나오면 job 실패
+
+4번이 없으면 "ssh가 안 끊겼다"를 "배포 성공"으로 읽게 된다.
+
+**필요한 설정** (GitHub → Settings → Secrets and variables → Actions)
+
+| 종류 | 이름 | 값 |
+|------|------|-----|
+| Secret | `EC2_HOST` | EC2 퍼블릭 IP |
+| Secret | `EC2_SSH_KEY` | 배포 전용 **개인키 전문** (`-----BEGIN`부터 마지막 줄까지) |
+| Variable (선택) | `EC2_USER` | 기본값 `ubuntu`. Amazon Linux면 `ec2-user` |
+
+전제: 서버 `~/travel-ops`가 git clone 상태 / 서버 `.env` 존재 / 보안그룹 22·80 개방.
+
+배포 키는 로컬 접속용 `.pem`과 **따로** 만든다. 유출됐을 때 이 키만 회수할 수 있어야 한다.
+
+```powershell
+# 암호는 빈 값(엔터 두 번) — Actions는 암호를 타이핑할 수 없다
+ssh-keygen -t ed25519 -C "github-actions@travel-ops" -f "$env:USERPROFILE\.ssh\travel_ops_deploy"
+```
+
+공개키(`.pub`)를 서버 `~/.ssh/authorized_keys`에 추가하고, 개인키를 `EC2_SSH_KEY`에 넣는다.
+인스턴스를 재생성하면 `EC2_HOST`와 서버의 `authorized_keys`를 다시 세팅해야 한다.

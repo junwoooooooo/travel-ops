@@ -118,7 +118,7 @@ class Block:
 - [x] **세션 4 — 하이브리드 전환**: postgres에 `ports: ["5432:5432"]`, .env는 `@localhost`, compose api에는 `environment:`로 `@postgres` 직접 지정. venv 생성·설치 → `docker compose up postgres redis` + `uvicorn --reload`. 저장 즉시 반영 체험
 - [x] **세션 5 — 시험지+CI**: pytest·httpx 설치, tests/test_auth.py(가입→로그인→/me 왕복), 로컬 통과 → ci.yml(push·PR 트리거, postgres service, pytest) → Actions 초록불
 - [x] **세션 6 — EC2+RDS**: 프리티어 EC2 + RDS 생성, 인바운드 규칙 설정, 서버에 .env 작성, Nginx 컨테이너 추가(SSE 경로 `proxy_buffering off`), 외부 IP 접속 확인. **결제 알림(Billing Alert) 설정. 실습용 인스턴스는 사용 후 삭제**
-- [ ] **세션 7 — CD**: GitHub Secrets(EC2_HOST, EC2_SSH_KEY) → deploy job(`needs: test`, main만) → push → 자동 배포 확인
+- [x] **세션 7 — CD**: GitHub Secrets(EC2_HOST, EC2_SSH_KEY) → deploy job(`needs: test`, main만) → push → 자동 배포 확인
 
 ### Phase 1 · 2~3주차 — 일정이 나온다
 > DoD: **"오사카 3박4일 미식, 150만원" 입력 → place_id 달린 실존 장소 일정이 스트리밍으로 출력**
@@ -205,6 +205,12 @@ class Block:
 - 세션 5(CI) 완료 후 `gh pr merge --auto`로 업그레이드 검토 — 검수 자동화가 생긴 뒤에만 머지 자동화
 - 의존성 잠금(pip-tools: `requirements.in` → 해시 포함 컴파일) — 세션 7(CD) 직전. 지금은 직접 의존만 `==`이라 전이 의존성이 열려 있다. 뒤집는 조건: 전이 의존성 때문에 CI가 한 번이라도 깨지면 즉시 앞당긴다
 - Alembic 마이그레이션 도입 — 세션 8(trips) 직전. lifespan의 `create_all`은 Phase 0 한정 임시 조치이고, 테이블이 둘 이상 되는 순간 한계가 온다
+- **22번 포트를 "배포 시에만 개방"으로 강화** — deploy job이 AWS API로 러너 IP만 열었다가 닫는다.
+  지금은 상시 개방 + 키 인증만이다(ADR-0006 결정 2). 대가는 서버 방화벽을 조작할 수 있는 IAM 자격증명이
+  GitHub에 상주하는 것. 뒤집는 조건: 서버에 실제 사용자 데이터가 들어가는 순간 즉시 앞당긴다
+- 빌드를 CI로 옮기고 서버는 이미지 pull만(GHCR) — ADR-0006 결정 1의 뒤집는 조건. 서버 빌드가 OOM나거나
+  배포 시간이 앱 응답에 보이기 시작하면. 롤백이 태그 하나가 되는 이득이 같이 온다
+- SSH 호스트 키 고정(known_hosts secret) — 지금은 매 배포가 TOFU다. Elastic IP로 인스턴스 IP를 고정한 뒤
 
 ---
 
