@@ -1,0 +1,9 @@
+비동기(asyncpg) 단일 DB 구성. 결정 배경은 docs/adr/0007-alembic-migrations.md.
+
+- 설정: 루트 alembic.ini (ASCII 전용 — alembic이 로케일 인코딩으로 읽어서 Windows cp949에서 깨진다)
+- 접속 주소: alembic.ini가 아니라 .env → app/config.py → migrations/env.py의 get_url()
+- 자주 쓰는 명령
+    alembic upgrade head                      # 최신까지 적용
+    alembic revision --autogenerate -m "..."  # 모델과 DB의 차이로 초안 생성 (반드시 눈으로 검토)
+    alembic downgrade -1                      # 한 칸 되돌리기
+- 리비전 id는 자동 해시 대신 --rev-id 0001, 0002…로 직접 준다. 순서가 눈에 보여야 한다

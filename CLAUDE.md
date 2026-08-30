@@ -14,7 +14,8 @@
 - main 직접 push 금지, force push 금지
 
 ## 명령어
-- 개발: docker compose up postgres redis + uvicorn app.main:app --reload
+- 개발: docker compose up postgres redis + alembic upgrade head + uvicorn app.main:app --reload
+- 스키마 변경: 모델 수정 → `alembic revision --autogenerate -m "..."` → 생성된 파일 검토 → `alembic upgrade head`
 - 테스트: pytest / 풀도커 점검: docker compose up --build
 
 ## 절대 규칙
@@ -22,4 +23,5 @@
 - 비밀값은 .env만. 코드·커밋·로그에 금지. .env.example 최신 유지
 - 라이브러리 추가 시 requirements.txt에 == 버전 고정
 - 소유권 위반 응답은 404 (존재 노출 금지)
+- 스키마는 마이그레이션으로만 변경 (create_all 금지). 모델을 고쳤으면 리비전도 같은 커밋에 (ADR-0007)
 - 설계 변경 시 docs/adr/에 기록, 근거는 ROADMAP.md 1장의 R1~R5를 가리킬 것
