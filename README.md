@@ -31,5 +31,23 @@ docker compose up -d postgres          # 테스트도 이 DB를 쓴다
 재기동 신호(CTRL_C_EVENT)가 전달되지 않아 변경 감지 후 그대로 멈춘다.
 
 접속은 두 모드 모두 http://localhost:8000/docs.
+풀도커에서는 Nginx도 함께 떠서 http://localhost (80번)로도 같은 앱에 닿는다 — 서버와 같은 경로다.
 `.env`의 `DATABASE_URL`은 하이브리드 기준(`@localhost`)이고, 컨테이너 안에서 쓰는 `@postgres` 주소는
 `docker-compose.yml`의 `api.environment`가 덮어쓴다. 두 모드를 동시에 띄우면 8000 포트가 충돌한다.
+
+## 배포 (EC2)
+
+서버는 `docker-compose.prod.yml`만 쓴다. 로컬 파일과 달리 api를 호스트에 공개하지 않고,
+바깥을 보는 것은 Nginx(80)뿐이다.
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+DB 위치는 이 파일이 아니라 서버 `.env`의 `DATABASE_URL`이 정한다 (ADR-0005).
+
+```bash
+# RDS를 쓰는 동안        → DATABASE_URL=...@<RDS 엔드포인트>:5432/travelops
+# RDS를 지운 뒤          → DATABASE_URL=...@postgres:5432/travelops 로 바꾸고
+docker compose -f docker-compose.prod.yml --profile localdb up -d
+```
