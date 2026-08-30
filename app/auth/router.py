@@ -1,46 +1,16 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.security import OAuth2PasswordRequestForm
 
 from app.auth import service
 from app.auth.models import User
 from app.auth.schemas import Token, UserCreate, UserRead
-from app.core.db import get_db
-from app.core.security import create_access_token, decode_access_token
+from app.auth.service import CurrentUser
+from app.core.db import DbSession
+from app.core.security import create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
-
-DbSession = Annotated[AsyncSession, Depends(get_db)]
-
-_CREDENTIALS_ERROR = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Could not validate credentials",
-    headers={"WWW-Authenticate": "Bearer"},
-)
-
-
-async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
-    db: DbSession,
-) -> User:
-    subject = decode_access_token(token)
-    if subject is None:
-        raise _CREDENTIALS_ERROR
-    try:
-        user_id = int(subject)
-    except ValueError:
-        raise _CREDENTIALS_ERROR from None
-
-    user = await service.get_by_id(db, user_id)
-    if user is None:
-        raise _CREDENTIALS_ERROR
-    return user
-
-
-CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 @router.post("/signup", response_model=UserRead, status_code=status.HTTP_201_CREATED)
