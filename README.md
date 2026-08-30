@@ -9,11 +9,17 @@ docker compose up -d postgres redis
 python -m venv venv            # 최초 1회
 .\venv\Scripts\python.exe -m pip install -r requirements.txt   # 최초 1회
 .\venv\Scripts\Activate.ps1
+alembic upgrade head           # 스키마를 최신으로 (마이그레이션이 추가됐을 때마다)
 uvicorn app.main:app --reload
 ```
 
+앱은 더 이상 테이블을 만들지 않는다. 스키마는 `alembic upgrade head`로만 생긴다 (ADR-0007).
+모델을 고쳤으면 `alembic revision --autogenerate -m "..."`으로 리비전을 만들고 파일을 눈으로
+검토한 뒤 커밋한다. 잊으면 `tests/test_migrations.py`가 CI에서 잡는다.
+
 **풀도커 (배포 리허설)** — 세션 6 EC2 배포와 같은 경로
 ```powershell
+docker compose run --rm api alembic upgrade head
 docker compose up --build
 ```
 
@@ -41,7 +47,9 @@ docker compose up -d postgres          # 테스트도 이 DB를 쓴다
 바깥을 보는 것은 Nginx(80)뿐이다.
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 DB 위치는 이 파일이 아니라 서버 `.env`의 `DATABASE_URL`이 정한다 (ADR-0005).
@@ -59,7 +67,9 @@ PR에서는 돌지 않는다.
 
 1. secret의 배포 키로 EC2에 ssh
 2. 서버에서 `git reset --hard <그 커밋의 SHA>` — `pull`이 아니라 SHA 고정이다 (ADR-0006)
-3. `docker compose -f docker-compose.prod.yml up -d --build` + dangling 이미지 정리
+3. `build` → **`alembic upgrade head`** → `up -d` + dangling 이미지 정리.
+   마이그레이션을 앱 기동에 숨기지 않고 별도 단계로 두면, 실패했을 때 alembic 에러가
+   Actions 로그에 그대로 뜬다 (ADR-0007)
 4. 러너가 **바깥에서** `http://<EC2_HOST>/health`를 3초 간격 20회 폴링.
    응답의 `commit`이 **이번 커밋과 같아야** 통과
 

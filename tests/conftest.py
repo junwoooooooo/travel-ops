@@ -13,13 +13,15 @@ from app.auth import models as auth_models  # noqa: F401  Base.metadata에 users
 from app.config import settings
 from app.core.db import Base, get_db
 from app.main import app
+from app.trips import models as trips_models  # noqa: F401  Base.metadata에 trips 등록
 
 TEST_DB_NAME = "travelops_test"
 
 # 문자열을 자르지 않고 URL 객체로 파생시킨다 — .env 하나로 로컬·CI 모두 성립한다
-_url = make_url(settings.database_url)
-TEST_DB_URL = _url.set(database=TEST_DB_NAME)
-ADMIN_DB_URL = _url.set(database="postgres")
+DB_URL = make_url(settings.database_url)
+TEST_DB_URL = DB_URL.set(database=TEST_DB_NAME)
+# CREATE/DROP DATABASE는 자기 자신에 붙어서 못 한다 — 관리용으로 postgres DB에 붙는다
+ADMIN_DB_URL = DB_URL.set(database="postgres")
 
 
 async def _create_test_database() -> None:

@@ -124,7 +124,8 @@ class Block:
 > DoD: **"오사카 3박4일 미식, 150만원" 입력 → place_id 달린 실존 장소 일정이 스트리밍으로 출력**
 > 숫자: TTFT / 툴 순차 vs 병렬 지연 비교
 
-- [ ] 세션 8~9 — trips 도메인 4파일 (auth 베끼며 직접). Block 스키마 필드 전부 미리. ERD: users 1:N trips 1:N blocks. 인가: 내 여행만(없는 것과 남의 것 동일 응답)
+- [x] **세션 8 — Alembic + trips**: `create_all` 철거 → 마이그레이션(0001 baseline users / 0002 trips). trips 도메인 4파일. 인가: 내 여행만(없는 것과 남의 것 동일 응답 404). 인증 의존성을 auth/service로 내려 도메인 간 통로를 service로 통일. CD는 build→migrate→up 3단계
+- [ ] 세션 9 — blocks: Block 스키마 필드 전부 미리(place_id·priority·booking·alternates·verified_at·slack_min). ERD 완성 users 1:N trips 1:N blocks. 두 번째 마이그레이션이 기존 DB에 증분 적용되는 것을 확인
 - [ ] 세션 10~11 — integrations: kakao(장소), weather. async httpx + 타임아웃 + 재시도 + Redis 캐시. 장애 격리: 날씨 API 죽어도 일정은 나옴
 - [ ] 세션 12~14 — planning: Pydantic 강제 파싱 + 되묻기 분기 → graph(parse→research→draft) → place_id 강제 → SSE 스트리밍("날씨 확인 중…")
 
@@ -204,13 +205,13 @@ class Block:
 **백로그 (검토 대기)**
 - 세션 5(CI) 완료 후 `gh pr merge --auto`로 업그레이드 검토 — 검수 자동화가 생긴 뒤에만 머지 자동화
 - 의존성 잠금(pip-tools: `requirements.in` → 해시 포함 컴파일) — 세션 7(CD) 직전. 지금은 직접 의존만 `==`이라 전이 의존성이 열려 있다. 뒤집는 조건: 전이 의존성 때문에 CI가 한 번이라도 깨지면 즉시 앞당긴다
-- Alembic 마이그레이션 도입 — 세션 8(trips) 직전. lifespan의 `create_all`은 Phase 0 한정 임시 조치이고, 테이블이 둘 이상 되는 순간 한계가 온다
 - **22번 포트를 "배포 시에만 개방"으로 강화** — deploy job이 AWS API로 러너 IP만 열었다가 닫는다.
   지금은 상시 개방 + 키 인증만이다(ADR-0006 결정 2). 대가는 서버 방화벽을 조작할 수 있는 IAM 자격증명이
   GitHub에 상주하는 것. 뒤집는 조건: 서버에 실제 사용자 데이터가 들어가는 순간 즉시 앞당긴다
 - 빌드를 CI로 옮기고 서버는 이미지 pull만(GHCR) — ADR-0006 결정 1의 뒤집는 조건. 서버 빌드가 OOM나거나
   배포 시간이 앱 응답에 보이기 시작하면. 롤백이 태그 하나가 되는 이득이 같이 온다
 - SSH 호스트 키 고정(known_hosts secret) — 지금은 매 배포가 TOFU다. Elastic IP로 인스턴스 IP를 고정한 뒤
+- `.dockerignore` 추가 — 지금은 `__pycache__`·`venv`가 빌드 컨텍스트로 딸려 들어간다. 세션 8에서 `migrations/`가 이미지에 추가되며 눈에 띄었다. 컨텍스트 전송이 느려지거나 이미지에 안 들어가야 할 것이 보이면 앞당긴다
 
 ---
 

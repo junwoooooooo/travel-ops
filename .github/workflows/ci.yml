@@ -98,7 +98,15 @@ jobs:
           git reset --hard "$GIT_SHA"
           # GIT_SHA는 ssh 명령줄로 넘어와 이 셸의 환경에 있다. compose가 빌드 인자로 보간해
           # 이미지에 굽고, 앱이 /health로 돌려준다
-          docker compose -f docker-compose.prod.yml up -d --build
+          docker compose -f docker-compose.prod.yml build
+          # 새 코드가 뜨기 전에 스키마를 먼저 맞춘다. 앱 시작에 숨기지 않고 별도 단계로 두는 이유:
+          # 실패하면 여기서 멈추고 alembic 에러가 Actions 로그에 그대로 뜬다. 엔트리포인트에
+          # 숨기면 컨테이너 크래시 루프 → "/health가 커밋을 보고하지 않음"으로만 드러난다 (ADR-0007)
+          #
+          # DB가 서버 안(localdb 프로필)인 구성이라면 postgres가 이미 떠 있어야 한다
+          # (restart: unless-stopped라 재부팅해도 살아 있다). run은 의존 서비스를 띄우지 않는다
+          docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+          docker compose -f docker-compose.prod.yml up -d
           # 빌드마다 쌓이는 dangling 이미지. 8GB 디스크에서는 방치하면 언젠가 터진다
           docker image prune -f
           REMOTE

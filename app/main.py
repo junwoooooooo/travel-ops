@@ -2,17 +2,19 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.auth import models as auth_models  # noqa: F401  Base.metadata에 users 등록
 from app.auth.router import router as auth_router
 from app.config import settings
-from app.core.db import Base, engine
+from app.core.db import engine
+from app.trips.router import router as trips_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Phase 0 한정. 마이그레이션 도구 도입 전까지의 임시 조치.
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """스키마는 여기서 만들지 않는다.
+
+    Phase 0에는 create_all이 있었다. 이제 테이블은 마이그레이션으로만 생기고
+    (`alembic upgrade head`), 앱은 이미 맞춰진 DB에 붙는다 (ADR-0007).
+    """
     yield
     await engine.dispose()
 
@@ -20,6 +22,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Travel Ops", version="0.1.0", lifespan=lifespan)
 
 app.include_router(auth_router)
+app.include_router(trips_router)
 
 
 @app.get("/health", tags=["ops"])
