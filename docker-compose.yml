@@ -5,6 +5,10 @@ services:
   api:
     build: .
     env_file: .env
+    environment:
+      # .env의 DATABASE_URL은 호스트 uvicorn용(@localhost)이다. 컨테이너 안에서는 서비스명으로 붙어야 하므로
+      # 여기서 덮어쓴다 (compose 우선순위: environment > env_file). ${...}는 compose가 .env에서 보간한다.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     ports:
       - "8000:8000"
     depends_on:
@@ -20,6 +24,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # 하이브리드 모드: 호스트에서 도는 uvicorn이 이 통로로 붙는다
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
