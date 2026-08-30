@@ -105,7 +105,11 @@ jobs:
           #
           # DB가 서버 안(localdb 프로필)인 구성이라면 postgres가 이미 떠 있어야 한다
           # (restart: unless-stopped라 재부팅해도 살아 있다). run은 의존 서비스를 띄우지 않는다
-          docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+          #
+          # -T와 </dev/null이 둘 다 필요하다. 이 스크립트는 ssh stdin(heredoc)으로 흘러 들어와
+          # bash -s가 한 줄씩 읽는 중이다. run이 컨테이너에 stdin을 붙이면 남은 스크립트를
+          # 그대로 삼켜서, 아래 up -d가 실행되지 않고도 job은 0으로 끝난다 (실제로 겪었다)
+          docker compose -f docker-compose.prod.yml run --rm -T api alembic upgrade head </dev/null
           docker compose -f docker-compose.prod.yml up -d
           # 빌드마다 쌓이는 dangling 이미지. 8GB 디스크에서는 방치하면 언젠가 터진다
           docker image prune -f
