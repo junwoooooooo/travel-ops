@@ -60,9 +60,19 @@ PR에서는 돌지 않는다.
 1. secret의 배포 키로 EC2에 ssh
 2. 서버에서 `git reset --hard <그 커밋의 SHA>` — `pull`이 아니라 SHA 고정이다 (ADR-0006)
 3. `docker compose -f docker-compose.prod.yml up -d --build` + dangling 이미지 정리
-4. 러너가 **바깥에서** `http://<EC2_HOST>/health`를 3초 간격 20회 폴링. 200이 안 나오면 job 실패
+4. 러너가 **바깥에서** `http://<EC2_HOST>/health`를 3초 간격 20회 폴링.
+   응답의 `commit`이 **이번 커밋과 같아야** 통과
 
-4번이 없으면 "ssh가 안 끊겼다"를 "배포 성공"으로 읽게 된다.
+4번이 없으면 "ssh가 안 끊겼다"를 "배포 성공"으로 읽는다. 그렇다고 200만 보는 것도 부족하다 —
+아직 교체되지 않은 구 컨테이너도 200을 준다. `commit` 대조는 새 이미지가 뜬 뒤에만 참이 된다.
+
+```bash
+curl http://<EC2_HOST>/health
+# {"status":"ok","commit":"a25df0f..."}   ← 지금 떠 있는 커밋
+```
+
+`commit`은 이미지 빌드 인자 `GIT_SHA`로 굽는다(Dockerfile의 `COPY app` 뒤 — 앞에 두면 커밋마다
+pip install 레이어가 깨진다). 손으로 띄우면 `unknown`이다.
 
 **필요한 설정** (GitHub → Settings → Secrets and variables → Actions)
 

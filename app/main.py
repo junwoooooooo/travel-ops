@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from app.auth import models as auth_models  # noqa: F401  Base.metadata에 users 등록
 from app.auth.router import router as auth_router
+from app.config import settings
 from app.core.db import Base, engine
 
 
@@ -23,4 +24,9 @@ app.include_router(auth_router)
 
 @app.get("/health", tags=["ops"])
 async def health() -> dict[str, str]:
-    return {"status": "ok"}
+    """살아있는지 + 어느 커밋이 떠 있는지.
+
+    commit이 있어야 배포 검증이 "200이 온다"가 아니라 "이 커밋이 떠 있다"를 판정할 수 있다.
+    서버에 들어가지 않고 밖에서 curl 한 번으로 확인된다.
+    """
+    return {"status": "ok", "commit": settings.git_sha}

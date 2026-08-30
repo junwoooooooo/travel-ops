@@ -7,7 +7,11 @@ name: travel-ops
 
 services:
   api:
-    build: .
+    build:
+      context: .
+      args:
+        # deploy job이 환경변수로 넘긴다. 손으로 띄우면 unknown
+        GIT_SHA: ${GIT_SHA:-unknown}
     env_file: .env
     restart: unless-stopped
     expose:
