@@ -1,0 +1,54 @@
+# 서버(EC2)용 조립도. 로컬 개발은 docker-compose.yml을 쓴다.
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# 이 파일은 DB가 어디 있는지 모른다. api는 .env의 DATABASE_URL만 본다 —
+# RDS든 아래 postgres 컨테이너든 이 파일을 고칠 일이 없다.
+name: travel-ops
+
+services:
+  api:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    expose:
+      # 호스트에 공개하지 않는다. 바깥을 보는 것은 nginx뿐이다
+      - "8000"
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+
+  nginx:
+    image: nginx:1.29-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+
+  # RDS를 지우고 DB를 서버 안으로 내릴 때만 켠다 (ADR-3의 뒤집는 조건).
+  #   .env의 DATABASE_URL을 @postgres로 바꾸고
+  #   docker compose -f docker-compose.prod.yml --profile localdb up -d
+  postgres:
+    profiles: ["localdb"]
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:
