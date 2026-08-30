@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # 로컬 docker-compose와 같은 이미지 (ADR-0002)
+        image: pgvector/pgvector:pg17
+        env:
+          # 잡이 끝나면 사라지는 일회용 컨테이너의 값이다. 진짜 비밀은 .env / GitHub Secrets에만 둔다
+          POSTGRES_USER: ci_dummy_user
+          POSTGRES_PASSWORD: ci_dummy_password_not_a_secret
+          POSTGRES_DB: travelops
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_dummy_user -d travelops"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # conftest가 이 URL에서 travelops_test를 파생시킨다
+      DATABASE_URL: postgresql+asyncpg://ci_dummy_user:ci_dummy_password_not_a_secret@localhost:5432/travelops
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          # 로컬·Dockerfile과 같은 라인 (ADR-0001)
+          python-version: "3.13"
+          cache: pip
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 테스트용 JWT_SECRET 생성
+        # 비밀값은 커밋하지 않는다. 잡 실행 중에 만들어 그 잡에서만 쓴다
+        run: echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      - name: pytest
+        run: pytest -q

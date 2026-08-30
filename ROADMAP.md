@@ -116,7 +116,7 @@ class Block:
 - [x] **세션 2 — 리포**: GitHub 리포 생성 → clone → **`.gitignore` 최우선 작성**(.env, __pycache__/, venv/) → 뼈대 12파일 작성(requirements, .env, config, core/db, core/security, auth 4파일, main, Dockerfile, compose) → login을 OAuth2PasswordRequestForm(폼) 버전으로 → 첫 커밋·푸시. 확인: GitHub에서 .env만 안 보임
 - [x] **세션 3 — 첫 가동**: `docker compose up --build` → `localhost:8000/docs` → Swagger 풀코스: 가입(201) → 중복(409) → Authorize 로그인 → /me(200) → 로그아웃 후 /me(401)
 - [x] **세션 4 — 하이브리드 전환**: postgres에 `ports: ["5432:5432"]`, .env는 `@localhost`, compose api에는 `environment:`로 `@postgres` 직접 지정. venv 생성·설치 → `docker compose up postgres redis` + `uvicorn --reload`. 저장 즉시 반영 체험
-- [ ] **세션 5 — 시험지+CI**: pytest·httpx 설치, tests/test_auth.py(가입→로그인→/me 왕복), 로컬 통과 → ci.yml(push·PR 트리거, postgres service, pytest) → Actions 초록불
+- [x] **세션 5 — 시험지+CI**: pytest·httpx 설치, tests/test_auth.py(가입→로그인→/me 왕복), 로컬 통과 → ci.yml(push·PR 트리거, postgres service, pytest) → Actions 초록불
 - [ ] **세션 6 — EC2+RDS**: 프리티어 EC2 + RDS 생성, 인바운드 규칙 설정, 서버에 .env 작성, Nginx 컨테이너 추가(SSE 경로 `proxy_buffering off`), 외부 IP 접속 확인. **결제 알림(Billing Alert) 설정. 실습용 인스턴스는 사용 후 삭제**
 - [ ] **세션 7 — CD**: GitHub Secrets(EC2_HOST, EC2_SSH_KEY) → deploy job(`needs: test`, main만) → push → 자동 배포 확인
 
@@ -203,6 +203,9 @@ class Block:
 
 **백로그 (검토 대기)**
 - 세션 5(CI) 완료 후 `gh pr merge --auto`로 업그레이드 검토 — 검수 자동화가 생긴 뒤에만 머지 자동화
+- 의존성 잠금(pip-tools: `requirements.in` → 해시 포함 컴파일) — 세션 7(CD) 직전. 지금은 직접 의존만 `==`이라 전이 의존성이 열려 있다. 뒤집는 조건: 전이 의존성 때문에 CI가 한 번이라도 깨지면 즉시 앞당긴다
+- Alembic 마이그레이션 도입 — 세션 8(trips) 직전. lifespan의 `create_all`은 Phase 0 한정 임시 조치이고, 테이블이 둘 이상 되는 순간 한계가 온다
+- `.gitattributes`에 `* text=auto eol=lf` — 세션 6. Windows 작업 + Linux 컨테이너/EC2 조합이라 줄바꿈이 섞인다
 
 ---
 

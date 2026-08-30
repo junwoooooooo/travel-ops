@@ -17,6 +17,16 @@ uvicorn app.main:app --reload
 docker compose up --build
 ```
 
+## 테스트
+
+```powershell
+docker compose up -d postgres          # 테스트도 이 DB를 쓴다
+.\venv\Scripts\python.exe -m pytest
+```
+
+개발 DB(`travelops`)는 건드리지 않는다. `tests/conftest.py`가 `travelops_test`를 따로 만들어
+테스트마다 테이블을 새로 파고 지운다. CI도 같은 코드가 그대로 돈다.
+
 `--reload`은 콘솔이 붙은 터미널에서 실행해야 한다. 백그라운드·출력 리다이렉트로 띄우면 Windows에서
 재기동 신호(CTRL_C_EVENT)가 전달되지 않아 변경 감지 후 그대로 멈춘다.
 
