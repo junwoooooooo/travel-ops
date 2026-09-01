@@ -121,12 +121,14 @@ class Block:
 - [x] **세션 7 — CD**: GitHub Secrets(EC2_HOST, EC2_SSH_KEY) → deploy job(`needs: test`, main만) → push → 자동 배포 확인
 
 ### Phase 1 · 2~3주차 — 일정이 나온다
-> DoD: **"오사카 3박4일 미식, 150만원" 입력 → place_id 달린 실존 장소 일정이 스트리밍으로 출력**
+> DoD: **"부산 2박3일 미식, 40만원" 입력 → place_id 달린 실존 장소 일정이 스트리밍으로 출력**
+> (예시가 오사카였다가 국내로 바뀌었다 — 장소 API로 고른 카카오 로컬이 국내만 커버한다.
+>  Phase 4 골든셋도 국내라 이제 둘이 같은 곳을 본다. 세션 10~11에서 확정)
 > 숫자: TTFT / 툴 순차 vs 병렬 지연 비교
 
 - [x] **세션 8 — Alembic + trips**: `create_all` 철거 → 마이그레이션(0001 baseline users / 0002 trips). trips 도메인 4파일. 인가: 내 여행만(없는 것과 남의 것 동일 응답 404). 인증 의존성을 auth/service로 내려 도메인 간 통로를 service로 통일. CD는 build→migrate→up 3단계
 - [x] **세션 9 — blocks**: Block 스키마 필드 전부 미리(place_id·priority·booking·alternates·verified_at·slack_min + day_index·start_time·duration_min·cost·좌표·카테고리). blocks는 새 도메인이 아니라 trips의 두 번째 테이블 — 인가가 부모 여행 하나에만 있게 된다(ADR-0009). place는 스냅샷으로 평탄화, alternates는 JSONB, 값 목록은 String+CHECK(CHECK 12개). `GET`/`PUT` 전량 교체 + 같은 날 겹침 거부. ERD는 `docs/erd.md`. 0003이 기존 DB(users 2건)에 증분 적용되는 것을 확인하고 그 계약을 `test_migrations.py`에 고정 — downgrade 왕복도 처음 검증
-- [ ] 세션 10~11 — integrations: kakao(장소), weather. async httpx + 타임아웃 + 재시도 + Redis 캐시. 장애 격리: 날씨 API 죽어도 일정은 나옴
+- [x] **세션 10~11 — integrations**: 외부 호출을 `integrations/http.py` 한 통로로 모으고(타임아웃 connect 2s·read 3s, 3회 시도, 429·5xx만 재시도 — 그 외 4xx는 다시 물어도 같은 답), `core/cache.py`로 Redis를 처음 켰다(캐시 장애는 미스로 흡수, 소켓 타임아웃 0.2초). **장애 격리는 "똑같이 감싼다"가 아니라 비대칭이다** — kakao 실패는 치명적(place_id 없이는 블록이 존재할 수 없다), weather 실패는 `None`(= "모른다", 정상 분기). 날씨는 키가 필요 없는 Open-Meteo. 캐시 키의 좌표를 소수 2자리로 반올림하는 한 줄이 적중률을 만든다(실측 1128ms→1ms). 로깅·외부 API 목킹(httpx MockTransport)·재시도를 이 세션이 처음 도입했다. 스키마 무변경 (ADR-0010)
 - [ ] 세션 12~14 — planning: Pydantic 강제 파싱 + 되묻기 분기 → graph(parse→research→draft) → place_id 강제 → SSE 스트리밍("날씨 확인 중…")
 
 ### Phase 2 · 4~5주차 — 믿을 수 있는 일정
@@ -217,8 +219,18 @@ class Block:
   이벤트 파이프라인·멱등성 설계 **뒤에** 판다. 진실은 이벤트 로그에 있고 `status`는 그 투영인데
   투영을 원본보다 먼저 만들 수 없다. 나중 비용이 실제로 0에 가깝다(`ADD COLUMN ... DEFAULT 'planned'`는
   PG 11+에서 즉시, 과거 행은 정직하게 'planned', 기존 쿼리는 필터하지 않으므로 무영향)
-- `blocks.place_address`·`phone`·영업시간 JSONB — 세션 10~11에서 **kakao 응답을 실제로 본 뒤**.
-  모양을 외부 API가 정하는 값을 미리 고정하면 리비전을 두 번 쓴다. 백필은 API 재호출이라 기계적
+- **카카오 REST 키 확보 후 실응답 대조** — 세션 10~11은 키 없이 진행했다. 파서는 공식 문서만 보고
+  썼고 `MockTransport` 픽스처로 고정돼 있다. 필드가 문서와 다르면 첫 실호출에서 깨진다.
+  아래 컬럼 항목의 선행 조건이다
+- `blocks.place_address`·`phone`·영업시간 JSONB — **kakao 응답을 실제로 본 뒤**(위 항목).
+  모양을 외부 API가 정하는 값을 미리 고정하면 리비전을 두 번 쓴다. 백필은 API 재호출이라 기계적.
+  `PlaceCandidate`가 이미 address·phone·url을 실어 나르므로 컬럼만 추가하면 된다
+- **외부 API 호출 계측을 Phase 4 `/metrics`에 편입** — 호출수·p95 지연·캐시 적중률. 7장이 "캐시
+  적중률"을 지표로 박아뒀는데 지금은 로그로만 남는다. Phase 4 관측성 작업에 한 줄로 붙는다
+- **URL 마스킹** — 우리 로그는 URL을 안 담지만 **httpx 자신의 INFO 로거가 전체 URL을 쿼리스트링째로
+  찍는다**(세션 10~11 수동 검증에서 확인). 지금은 "인증값은 헤더로만"이라는 불변식으로 버티고 있다.
+  뒤집는 조건: 쿼리스트링에 키를 요구하는 업스트림(기상청 `serviceKey`, OpenWeatherMap `appid`)을
+  붙이는 순간 — 그 API보다 마스킹이 먼저다 (ADR-0010)
 - `places` 테이블 — 뒤집는 조건: Phase 3에서 장소별 RAG 근거를 붙일 때. 근거는 블록이 아니라 장소에
   붙는 성질이라 그때가 분기점이다. `INSERT ... SELECT DISTINCT FROM blocks` + FK로 additive하게 간다 (ADR-0009)
 - `trips.revision_count` + 검증 배지 컬럼 — Phase 2. **blocks가 아니라 trips에** 붙여야 한다.
