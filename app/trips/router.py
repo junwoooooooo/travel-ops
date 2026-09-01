@@ -6,8 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.auth.service import CurrentUser
 from app.core.db import DbSession
 from app.trips import service
-from app.trips.models import Trip
-from app.trips.schemas import TripCreate, TripRead, TripUpdate
+from app.trips.models import Block, Trip
+from app.trips.schemas import (
+    BlockCreate,
+    BlockRead,
+    TripCreate,
+    TripRead,
+    TripUpdate,
+)
 
 router = APIRouter(prefix="/trips", tags=["trips"])
 
@@ -61,3 +67,23 @@ async def update_trip(payload: TripUpdate, trip: OwnedTrip, db: DbSession) -> Tr
 @router.delete("/{trip_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_trip(trip: OwnedTrip, db: DbSession) -> None:
     await service.delete_trip(db, trip)
+
+
+@router.get("/{trip_id}/blocks", response_model=list[BlockRead])
+async def list_blocks(trip: OwnedTrip, db: DbSession) -> Sequence[Block]:
+    """OwnedTrip이 인가를 전부 담당한다 — 남의 여행 일정은 없는 여행과 같은 404다."""
+    return await service.list_blocks(db, trip.id)
+
+
+@router.put("/{trip_id}/blocks", response_model=list[BlockRead])
+async def replace_blocks(
+    payload: list[BlockCreate], trip: OwnedTrip, db: DbSession
+) -> Sequence[Block]:
+    """일정 전체 교체. 한 칸씩 고치는 API가 아니라 계획을 통째로 갈아 끼우는 API다."""
+    try:
+        return await service.replace_blocks(db, trip.id, payload)
+    except service.InvalidBlockPlan as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc

@@ -125,7 +125,7 @@ class Block:
 > 숫자: TTFT / 툴 순차 vs 병렬 지연 비교
 
 - [x] **세션 8 — Alembic + trips**: `create_all` 철거 → 마이그레이션(0001 baseline users / 0002 trips). trips 도메인 4파일. 인가: 내 여행만(없는 것과 남의 것 동일 응답 404). 인증 의존성을 auth/service로 내려 도메인 간 통로를 service로 통일. CD는 build→migrate→up 3단계
-- [ ] 세션 9 — blocks: Block 스키마 필드 전부 미리(place_id·priority·booking·alternates·verified_at·slack_min). ERD 완성 users 1:N trips 1:N blocks. 두 번째 마이그레이션이 기존 DB에 증분 적용되는 것을 확인
+- [x] **세션 9 — blocks**: Block 스키마 필드 전부 미리(place_id·priority·booking·alternates·verified_at·slack_min + day_index·start_time·duration_min·cost·좌표·카테고리). blocks는 새 도메인이 아니라 trips의 두 번째 테이블 — 인가가 부모 여행 하나에만 있게 된다(ADR-0009). place는 스냅샷으로 평탄화, alternates는 JSONB, 값 목록은 String+CHECK(CHECK 12개). `GET`/`PUT` 전량 교체 + 같은 날 겹침 거부. ERD는 `docs/erd.md`. 0003이 기존 DB(users 2건)에 증분 적용되는 것을 확인하고 그 계약을 `test_migrations.py`에 고정 — downgrade 왕복도 처음 검증
 - [ ] 세션 10~11 — integrations: kakao(장소), weather. async httpx + 타임아웃 + 재시도 + Redis 캐시. 장애 격리: 날씨 API 죽어도 일정은 나옴
 - [ ] 세션 12~14 — planning: Pydantic 강제 파싱 + 되묻기 분기 → graph(parse→research→draft) → place_id 강제 → SSE 스트리밍("날씨 확인 중…")
 
@@ -138,6 +138,7 @@ class Block:
 - [ ] 부분 수정 API `POST /trips/{id}/revise` (기능 ③)
 - [ ] Plan B 사전 계산(같은 카테고리·도보권·비슷한 가격대 2곳) + anchor/filler 부여 + slack 심기
 - [ ] DB 근육: SQLAlchemy `echo=True`로 로우 쿼리 확인 습관, 조인/통계 쿼리 1개+(일자별 비용 합계 등), 인덱스 before/after 수치(blocks.trip_id)
+  - 측정 방법 메모(세션 9에서 확정): `ix_blocks_trip_id`는 세션 9가 이미 만들었다(FK 컬럼에 PG가 인덱스를 자동 생성하지 않으므로 CASCADE 삭제까지 이게 받친다). 그러니 before는 데이터를 수만 행 쌓은 뒤 `DROP INDEX` → `EXPLAIN (ANALYZE, BUFFERS)` → `CREATE INDEX` 순서로 잰다 — 인덱스를 일부러 늦게 만들어 숫자를 만드는 것보다 정직하다. 시드 스크립트가 먼저 필요하다
 - 참고: 솔버(OR-Tools)는 "규칙 검증"으로 시작. 완전 제약 배치는 여유 시 심화
 
 ### Phase 3 · 6주차 — RAG 근거 인용
@@ -212,6 +213,23 @@ class Block:
   배포 시간이 앱 응답에 보이기 시작하면. 롤백이 태그 하나가 되는 이득이 같이 온다
 - SSH 호스트 키 고정(known_hosts secret) — 지금은 매 배포가 TOFU다. Elastic IP로 인스턴스 IP를 고정한 뒤
 - `.dockerignore` 추가 — 지금은 `__pycache__`·`venv`가 빌드 컨텍스트로 딸려 들어간다. 세션 8에서 `migrations/`가 이미지에 추가되며 눈에 띄었다. 컨텍스트 전송이 느려지거나 이미지에 안 들어가야 할 것이 보이면 앞당긴다
+- **`blocks.status`(완료/건너뜀/문닫음)** — Phase 5. 필드가 아니라 상태 기계라, 전이 규칙을 정하는
+  이벤트 파이프라인·멱등성 설계 **뒤에** 판다. 진실은 이벤트 로그에 있고 `status`는 그 투영인데
+  투영을 원본보다 먼저 만들 수 없다. 나중 비용이 실제로 0에 가깝다(`ADD COLUMN ... DEFAULT 'planned'`는
+  PG 11+에서 즉시, 과거 행은 정직하게 'planned', 기존 쿼리는 필터하지 않으므로 무영향)
+- `blocks.place_address`·`phone`·영업시간 JSONB — 세션 10~11에서 **kakao 응답을 실제로 본 뒤**.
+  모양을 외부 API가 정하는 값을 미리 고정하면 리비전을 두 번 쓴다. 백필은 API 재호출이라 기계적
+- `places` 테이블 — 뒤집는 조건: Phase 3에서 장소별 RAG 근거를 붙일 때. 근거는 블록이 아니라 장소에
+  붙는 성질이라 그때가 분기점이다. `INSERT ... SELECT DISTINCT FROM blocks` + FK로 additive하게 간다 (ADR-0009)
+- `trips.revision_count` + 검증 배지 컬럼 — Phase 2. **blocks가 아니라 trips에** 붙여야 한다.
+  부분 수정이 delete+insert면 블록에 붙은 카운터는 함께 사라져 refine 상한 3회가 리셋으로 무력화된다
+- 커버링 인덱스 `(trip_id, day_index) INCLUDE (cost)` + 수만 행 시드 스크립트 — Phase 2의 일자별 비용
+  합계를 Index Only Scan으로 만든다. "FK에 인덱스 걸었다"보다 포트폴리오 숫자로 강하다
+- `Base.metadata`에 `naming_convention` 도입 — 지금 넣으면 users·trips·blocks의 기존 제약 개명
+  마이그레이션이 필요하고, 그 비용은 테이블 수에 선형으로 는다. 마지노선은 Phase 5(watches·events) 직전
+- 드리프트 게이트를 CHECK **식** 비교까지 확장 — 세션 9에서 실험으로 확인한 구멍이다. 이 버전의 alembic은
+  CHECK의 추가·삭제는 이름으로 잡지만 이름이 같고 식만 바뀌면 못 잡는다(`>= 1`을 `>= 0`으로 완화해도 초록불).
+  제약이 조용히 완화된 채 배포되는 사고가 한 번이라도 나오면 즉시 앞당긴다
 
 ---
 
