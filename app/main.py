@@ -4,7 +4,9 @@ from fastapi import FastAPI
 
 from app.auth.router import router as auth_router
 from app.config import settings
+from app.core import cache
 from app.core.db import engine
+from app.integrations import http
 from app.trips.router import router as trips_router
 
 
@@ -17,6 +19,10 @@ async def lifespan(app: FastAPI):
     """
     yield
     await engine.dispose()
+    # 외부로 나가는 커넥션 풀도 같이 닫는다. 안 닫으면 종료 시 "Unclosed client session" 경고가
+    # 남고, 재기동이 잦은 배포에서 소켓이 조금씩 샌다
+    await http.aclose()
+    await cache.aclose()
 
 
 app = FastAPI(title="Travel Ops", version="0.1.0", lifespan=lifespan)

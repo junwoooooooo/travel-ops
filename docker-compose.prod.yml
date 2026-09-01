@@ -13,10 +13,16 @@ services:
         # deploy job이 환경변수로 넘긴다. 손으로 띄우면 unknown
         GIT_SHA: ${GIT_SHA:-unknown}
     env_file: .env
+    environment:
+      # DB와 달리 redis는 이 조립도 안에 있다 — 위치가 확정이라 여기서 정한다.
+      # 서버 .env에 REDIS_URL을 손으로 넣지 않아도 배포가 성립한다
+      REDIS_URL: redis://redis:6379/0
     restart: unless-stopped
     expose:
       # 호스트에 공개하지 않는다. 바깥을 보는 것은 nginx뿐이다
       - "8000"
+    depends_on:
+      - redis
 
   redis:
     image: redis:8-alpine

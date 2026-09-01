@@ -9,6 +9,8 @@ services:
       # .env의 DATABASE_URL은 호스트 uvicorn용(@localhost)이다. 컨테이너 안에서는 서비스명으로 붙어야 하므로
       # 여기서 덮어쓴다 (compose 우선순위: environment > env_file). ${...}는 compose가 .env에서 보간한다.
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # 같은 이유로 REDIS_URL도 덮어쓴다. .env의 localhost는 호스트 uvicorn용이다
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     depends_on:
@@ -48,6 +50,10 @@ services:
 
   redis:
     image: redis:8-alpine
+    ports:
+      # postgres와 같은 이유 — 하이브리드 모드의 호스트 uvicorn이 이 통로로 붙는다.
+      # 이게 없으면 개발 중에는 캐시가 통째로 죽은 채로 돈다(장애 격리 덕에 조용히 는다)
+      - "6379:6379"
     volumes:
       - redisdata:/data
 

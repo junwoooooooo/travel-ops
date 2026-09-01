@@ -26,9 +26,22 @@ jobs:
           --health-timeout 3s
           --health-retries 10
 
+      redis:
+        # 로컬 docker-compose와 같은 이미지 (ADR-4)
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
     env:
       # conftest가 이 URL에서 travelops_test를 파생시킨다
       DATABASE_URL: postgresql+asyncpg://ci_dummy_user:ci_dummy_password_not_a_secret@localhost:5432/travelops
+      # conftest가 여기서 db 15를 파생시킨다 — 캐시 테스트가 개발용 db 0을 비우지 않게
+      REDIS_URL: redis://localhost:6379/0
 
     steps:
       - uses: actions/checkout@v7
