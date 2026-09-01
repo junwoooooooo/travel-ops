@@ -1,21 +1,29 @@
-"""테스트는 개발 DB를 건드리지 않는다. travelops_test를 따로 쓰고 매 테스트마다 비운다."""
+"""테스트는 개발 데이터를 건드리지 않는다.
+
+PostgreSQL은 travelops_test를 따로 쓰고 매 테스트마다 테이블을 새로 판다.
+Redis는 같은 서버의 db 15를 쓴다 — 개발용 db 0을 비우지 않기 위해서다.
+"""
 
 import asyncio
 from collections.abc import AsyncGenerator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth import models as auth_models  # noqa: F401  Base.metadata에 users 등록
 from app.config import settings
+from app.core import cache
 from app.core.db import Base, get_db
 from app.main import app
 from app.trips import models as trips_models  # noqa: F401  Base.metadata에 trips 등록
 
 TEST_DB_NAME = "travelops_test"
+# Redis는 DB를 이름이 아니라 번호로 가른다. 기본이 0이므로 끝번을 테스트용으로 쓴다
+TEST_REDIS_DB = 15
 
 # 문자열을 자르지 않고 URL 객체로 파생시킨다 — .env 하나로 로컬·CI 모두 성립한다
 DB_URL = make_url(settings.database_url)
@@ -43,6 +51,42 @@ async def _create_test_database() -> None:
 @pytest.fixture(scope="session", autouse=True)
 def test_database() -> None:
     asyncio.run(_create_test_database())
+
+
+@pytest.fixture(scope="session", autouse=True)
+def test_redis_url() -> None:
+    """캐시가 보는 주소를 db 15로 돌린다. 접속은 하지 않는다.
+
+    autouse지만 Redis를 요구하지 않는다 — 여기서 붙어버리면 auth·trips 테스트까지
+    Redis 없이는 못 돌게 된다. 실제 접속이 필요한 테스트만 redis_cache를 요청한다.
+    """
+    settings.redis_url = str(
+        make_url(settings.redis_url).set(database=str(TEST_REDIS_DB))
+    )
+    # 혹시 이미 만들어진 클라이언트가 있으면 옛 주소를 들고 있다
+    cache._client = None
+
+
+@pytest.fixture
+async def redis_cache(test_redis_url: None) -> AsyncGenerator[None, None]:
+    """진짜 Redis가 필요한 테스트용. 테스트 전후로 db 15를 비운다.
+
+    캐시는 장애를 미스로 흡수하도록 만들어져 있어서, Redis가 없으면 "캐시 히트" 계약이
+    조용히 통과해 버린다 — 그래서 여기서만은 접속을 명시적으로 확인하고 크게 실패한다.
+    """
+    client = cache._get_client()
+    try:
+        await client.ping()
+    except RedisError:
+        pytest.fail(
+            f"Redis에 붙지 못했다 ({settings.redis_url}). "
+            "`docker compose up -d redis`로 띄운 뒤 다시 돌린다"
+        )
+
+    await client.flushdb()
+    yield
+    await client.flushdb()
+    await cache.aclose()
 
 
 @pytest.fixture
