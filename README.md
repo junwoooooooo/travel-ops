@@ -17,6 +17,8 @@ uvicorn app.main:app --reload
 모델을 고쳤으면 `alembic revision --autogenerate -m "..."`으로 리비전을 만들고 파일을 눈으로
 검토한 뒤 커밋한다. 잊으면 `tests/test_migrations.py`가 CI에서 잡는다.
 
+현재 스키마는 [docs/erd.md](docs/erd.md) — users 1:N trips 1:N blocks. 설계 결정은 `docs/adr/`.
+
 **풀도커 (배포 리허설)** — 세션 6 EC2 배포와 같은 경로
 ```powershell
 docker compose run --rm api alembic upgrade head

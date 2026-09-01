@@ -4,8 +4,12 @@ conftest는 속도 때문에 Base.metadata.create_all로 테이블을 판다(함
 매 테스트 마이그레이션 재생은 너무 비싸다). 그러면 "모델은 고쳤는데 마이그레이션을
 안 만든" 사고를 아무도 못 잡는다 — 테스트는 다 통과하고 배포된 DB만 조용히 뒤처진다.
 
-그 구멍을 이 파일 하나가 막는다. 빈 DB에 마이그레이션만으로 스키마를 세운 뒤,
+그 구멍을 이 파일이 막는다. 빈 DB에 마이그레이션만으로 스키마를 세운 뒤,
 그 결과가 모델과 일치하는지 alembic에게 직접 묻는다 (ADR-0007).
+
+그리고 하나가 더 있다. 위 검사는 항상 빈 DB에서 시작하므로 "이미 데이터가 있는 DB에
+새 리비전이 얹히는가"는 전혀 보지 않는다. 배포된 DB는 언제나 그쪽이다. 두 번째
+테스트가 그 계약을 붙잡는다 (세션 9 DoD).
 """
 
 import asyncio
@@ -40,6 +44,15 @@ async def _recreate_migration_database() -> None:
         await engine.dispose()
 
 
+def _configure(db_url: str) -> Config:
+    config = Config(str(ALEMBIC_INI))
+    # ini의 sqlalchemy.url이 아니라 attributes로 넘긴다 — env.py의 get_url()이 이 값을 먼저 본다.
+    # ini 경로는 configparser 보간을 거쳐서 비밀번호에 %가 있으면 조용히 깨진다
+    # str(URL)은 비밀번호를 ***로 가린다. 그대로 넘기면 인증에서 죽는다
+    config.attributes["db_url"] = db_url
+    return config
+
+
 def test_migrations_produce_the_models_schema() -> None:
     """동기 테스트다.
 
@@ -49,11 +62,7 @@ def test_migrations_produce_the_models_schema() -> None:
     """
     asyncio.run(_recreate_migration_database())
 
-    config = Config(str(ALEMBIC_INI))
-    # ini의 sqlalchemy.url이 아니라 attributes로 넘긴다 — env.py의 get_url()이 이 값을 먼저 본다.
-    # ini 경로는 configparser 보간을 거쳐서 비밀번호에 %가 있으면 조용히 깨진다
-    # str(URL)은 비밀번호를 ***로 가린다. 그대로 넘기면 인증에서 죽는다
-    config.attributes["db_url"] = MIGRATION_DB_URL.render_as_string(hide_password=False)
+    config = _configure(MIGRATION_DB_URL.render_as_string(hide_password=False))
 
     command.upgrade(config, "head")
 
@@ -67,3 +76,78 @@ def test_migrations_produce_the_models_schema() -> None:
             "`alembic revision --autogenerate -m \"...\"`로 새 리비전을 만들어라.\n"
             f"{exc}"
         )
+
+
+def test_new_revision_applies_to_a_database_that_already_has_data() -> None:
+    """세션 9 DoD. 배포된 DB는 언제나 "이미 뭔가 들어 있는 DB"다.
+
+    0002까지만 올린 DB에 회원과 여행을 넣어 두고 head까지 올린다. blocks가 새로
+        생기면서 기존 행이 그대로 살아 있어야 "증분 적용"이다. 테이블을 다시 만드는
+    마이그레이션이었다면 여기서 행이 사라지고 들킨다.
+
+    되돌리기까지 왕복한다. downgrade는 지금껏 한 번도 실행된 적이 없는 경로인데,
+    되돌릴 수 없는 마이그레이션은 배포 중에 문제가 생겼을 때 손쓸 방법이 없다.
+    """
+    asyncio.run(_recreate_migration_database())
+    url = MIGRATION_DB_URL.render_as_string(hide_password=False)
+    config = _configure(url)
+
+    command.upgrade(config, "0002")
+    asyncio.run(_seed_a_trip(url))
+    assert asyncio.run(_table_exists(url, "blocks")) is False
+
+    command.upgrade(config, "head")
+
+    assert asyncio.run(_table_exists(url, "blocks")) is True
+    # 새 테이블이 생겼다고 옆 테이블이 흔들리면 안 된다
+    assert asyncio.run(_trip_titles(url)) == ["세션 8이 남긴 여행"]
+
+    command.downgrade(config, "0002")
+
+    assert asyncio.run(_table_exists(url, "blocks")) is False
+    assert asyncio.run(_trip_titles(url)) == ["세션 8이 남긴 여행"]
+
+
+async def _seed_a_trip(url: str) -> None:
+    """0002 시점의 스키마에만 의존해 직접 넣는다 — 모델을 쓰면 미래 컬럼이 딸려 온다."""
+    engine = create_async_engine(url)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO users (email, hashed_password) "
+                    "VALUES ('seed@example.com', 'x')"
+                )
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO trips "
+                    "(user_id, title, destination, start_date, end_date) "
+                    "SELECT id, :title, '오사카', '2026-10-01', '2026-10-04' FROM users"
+                ),
+                {"title": "세션 8이 남긴 여행"},
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _table_exists(url: str, table: str) -> bool:
+    engine = create_async_engine(url)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text("SELECT to_regclass(:name) IS NOT NULL"), {"name": table}
+            )
+            return bool(result.scalar())
+    finally:
+        await engine.dispose()
+
+
+async def _trip_titles(url: str) -> list[str]:
+    engine = create_async_engine(url)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(text("SELECT title FROM trips ORDER BY id"))
+            return list(result.scalars())
+    finally:
+        await engine.dispose()
