@@ -20,7 +20,12 @@ from app.trips import models as trips_models  # noqa: F401  Base.metadata에 tri
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers는 기본이 True다(alembic 템플릿 그대로의 기본값). 그대로 두면
+    # 이 함수가 도는 순간 **이미 만들어진 로거를 전부 끈다** — 우리 app.* 로거까지.
+    # 배포에서는 alembic이 별도 프로세스라 티가 안 나지만, 테스트는 한 프로세스에서
+    # 마이그레이션과 앱 코드를 같이 돌리므로 test_migrations 이후의 모든 앱 로그가 사라진다
+    # (세션 12에서 로그 계약 테스트가 단독으로는 통과하고 전체 실행에서만 깨져 드러났다).
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

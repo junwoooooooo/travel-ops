@@ -18,5 +18,11 @@ redis==8.1.0
 # 세션 10~11부터 테스트 도구가 아니라 런타임 의존이다 — 외부 API를 이걸로 부른다
 httpx==0.28.1
 
+# 세션 12. LLM 공급자 (ADR-0011).
+# 주의: 이 SDK는 httpx가 아니라 httpx2에 의존한다 — 우리 integrations가 쓰는 httpx와
+# 별개 패키지라 충돌은 없지만, HTTP 라이브러리가 두 개가 된다. 우리 코드는 계속 httpx만 쓰고
+# httpx2는 SDK 내부와 그 목킹(tests)에서만 보인다
+openai==3.14.1
+
 pytest==9.1.1
 pytest-asyncio==1.4.0
