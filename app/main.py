@@ -4,9 +4,10 @@ from fastapi import FastAPI
 
 from app.auth.router import router as auth_router
 from app.config import settings
-from app.core import cache
+from app.core import cache, llm
 from app.core.db import engine
 from app.integrations import http
+from app.planning.router import router as planning_router
 from app.trips.router import router as trips_router
 
 
@@ -23,12 +24,14 @@ async def lifespan(app: FastAPI):
     # 남고, 재기동이 잦은 배포에서 소켓이 조금씩 샌다
     await http.aclose()
     await cache.aclose()
+    await llm.aclose()
 
 
 app = FastAPI(title="Travel Ops", version="0.1.0", lifespan=lifespan)
 
 app.include_router(auth_router)
 app.include_router(trips_router)
+app.include_router(planning_router)
 
 
 @app.get("/health", tags=["ops"])

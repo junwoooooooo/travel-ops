@@ -129,7 +129,18 @@ class Block:
 - [x] **세션 8 — Alembic + trips**: `create_all` 철거 → 마이그레이션(0001 baseline users / 0002 trips). trips 도메인 4파일. 인가: 내 여행만(없는 것과 남의 것 동일 응답 404). 인증 의존성을 auth/service로 내려 도메인 간 통로를 service로 통일. CD는 build→migrate→up 3단계
 - [x] **세션 9 — blocks**: Block 스키마 필드 전부 미리(place_id·priority·booking·alternates·verified_at·slack_min + day_index·start_time·duration_min·cost·좌표·카테고리). blocks는 새 도메인이 아니라 trips의 두 번째 테이블 — 인가가 부모 여행 하나에만 있게 된다(ADR-0009). place는 스냅샷으로 평탄화, alternates는 JSONB, 값 목록은 String+CHECK(CHECK 12개). `GET`/`PUT` 전량 교체 + 같은 날 겹침 거부. ERD는 `docs/erd.md`. 0003이 기존 DB(users 2건)에 증분 적용되는 것을 확인하고 그 계약을 `test_migrations.py`에 고정 — downgrade 왕복도 처음 검증
 - [x] **세션 10~11 — integrations**: 외부 호출을 `integrations/http.py` 한 통로로 모으고(타임아웃 connect 2s·read 3s, 3회 시도, 429·5xx만 재시도 — 그 외 4xx는 다시 물어도 같은 답), `core/cache.py`로 Redis를 처음 켰다(캐시 장애는 미스로 흡수, 소켓 타임아웃 0.2초). **장애 격리는 "똑같이 감싼다"가 아니라 비대칭이다** — kakao 실패는 치명적(place_id 없이는 블록이 존재할 수 없다), weather 실패는 `None`(= "모른다", 정상 분기). 날씨는 키가 필요 없는 Open-Meteo. 캐시 키의 좌표를 소수 2자리로 반올림하는 한 줄이 적중률을 만든다(실측 1128ms→1ms). 로깅·외부 API 목킹(httpx MockTransport)·재시도를 이 세션이 처음 도입했다. 스키마 무변경 (ADR-0010)
-- [ ] 세션 12~14 — planning: Pydantic 강제 파싱 + 되묻기 분기 → graph(parse→research→draft) → place_id 강제 → SSE 스트리밍("날씨 확인 중…")
+- [x] **세션 12 — planning 파싱·되묻기**: 첫 LLM 도입(OpenAI, 구조화 출력). **핵심은 역할 분담이다 —
+  LLM은 문장에서 값을 뽑기만 하고(모르면 `null`), "정보가 충분한가"는 코드가 판정한다**(ADR-0007의 연장).
+  그래서 판정 로직 테스트에는 LLM이 등장하지 않는다. 코드가 잡는 것은 빈 값만이 아니라 **말이 안 되는 값**이다
+  — 뒤집힌 날짜·음수 예산·지나간 출발일은 사용자가 아니라 모델이 틀린 것이라 되묻기로 되돌린다(R4).
+  되묻기는 오류가 아니라 200이다(weather의 `None`과 같은 정신). 되물을 필드는 응답에서 지워
+  "`None`이 아닌 값은 신뢰할 수 있다"를 불변식으로 세웠다. 업스트림 문제는 전부 503 하나로 모은다.
+  게이트웨이는 `core/llm.py` 하나이고 도메인은 SDK를 모른다. 스키마 무변경 (ADR-0011).
+  곁가지 수확: alembic `fileConfig`의 기본값이 앱 로거를 전부 끄고 있었다 — 로그 계약 테스트가
+  단독으로는 통과하고 전체 실행에서만 깨져서 드러났다
+- [ ] 세션 13 — graph: langgraph 도입, parse→research→draft. research는 kakao 후보 수집,
+  draft는 **후보 집합 안에서만** 고르고 코드가 `place_id ∈ 후보`를 검증(환각 차단) → 기존 `replace_blocks` 재사용
+- [ ] 세션 14 — SSE 스트리밍("날씨 확인 중…"). nginx는 세션 6에서 `proxy_buffering off`가 이미 들어가 있다. TTFT 측정
 
 ### Phase 2 · 4~5주차 — 믿을 수 있는 일정
 > DoD: **검증 배지가 뜨고, "2일차만 바꿔줘"가 2일차만 바꾸고, 모든 블록에 대안 2곳이 붙어 있다**
@@ -233,6 +244,14 @@ class Block:
   붙이는 순간 — 그 API보다 마스킹이 먼저다 (ADR-0010)
 - `places` 테이블 — 뒤집는 조건: Phase 3에서 장소별 RAG 근거를 붙일 때. 근거는 블록이 아니라 장소에
   붙는 성질이라 그때가 분기점이다. `INSERT ... SELECT DISTINCT FROM blocks` + FK로 additive하게 간다 (ADR-0009)
+- **LLM 호출 계측을 Phase 4 `/metrics`에 편입** — 위의 외부 API 계측 항목과 한 몸이다. 호출수·토큰
+  수·모델별 비용·p95. 지금은 `core/llm.py`가 로그로만 남긴다(이름·지연·토큰). 7장이 "요청당 비용"을
+  지표로 박아뒀으므로 Phase 4 관측성 작업에 한 줄로 붙는다
+- **프롬프트 버전 키** — 캐시 키의 `_CACHE_VERSION`처럼 프롬프트에도 버전을 박는다. 골든셋(Phase 4)이
+  생긴 뒤에야 의미가 있다 — 점수 추이의 변화가 프롬프트 변경 때문인지 모델 때문인지 가르기 위해서다
+- **되묻기 왕복의 상태 저장** — 지금은 무상태다(클라이언트가 보정한 문장을 통째로 다시 보낸다).
+  `app/planning/models.py`가 없는 이유이기도 하다. 뒤집는 조건: 세션 14 SSE에서 왕복이 실제로 생기거나,
+  대화가 3턴을 넘겨 "앞에서 뭐라고 했는지"를 서버가 알아야 할 때
 - `trips.revision_count` + 검증 배지 컬럼 — Phase 2. **blocks가 아니라 trips에** 붙여야 한다.
   부분 수정이 delete+insert면 블록에 붙은 카운터는 함께 사라져 refine 상한 3회가 리셋으로 무력화된다
 - 커버링 인덱스 `(trip_id, day_index) INCLUDE (cost)` + 수만 행 시드 스크립트 — Phase 2의 일자별 비용
